@@ -684,4 +684,27 @@ async function sendMessage(message, isFile = false) {
             });
         }
     }
-} 
+}
+
+// تابع نمایش مدل انتخاب شده
+function updateSelectedModelDisplay() {
+    const modelNameElement = document.getElementById('selected-model-name');
+    if (selectedModel) {
+        modelNameElement.textContent = selectedModel.name;
+        modelNameElement.style.display = 'inline';
+    } else {
+        modelNameElement.textContent = 'انتخاب نشده';
+        modelNameElement.style.display = 'inline';
+    }
+}
+
+// اضافه کردن event listener برای دکمه ارسال
+document.querySelector('.send-btn').addEventListener('click', sendMessage);
+
+// اضافه کردن event listener برای کلید Enter
+document.getElementById('user-input').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+}); 
