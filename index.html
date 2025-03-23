@@ -3,142 +3,140 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>چت‌بات هوشمند</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
-    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/b-nazanin-font@v1.0.0/dist/font-face.css" rel="stylesheet" type="text/css" />
-    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/b-titr-font@v1.0.0/dist/font-face.css" rel="stylesheet" type="text/css" />
+    <title>چت بات هوشمند</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
-    <div class="theme-toggle">
-        <i class="fas fa-moon"></i>
-    </div>
-
-    <div class="container">
-        <header>
-            <div class="chat-header">
-                <div class="header-left">
-                    <div class="logo">
-                        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234285f4'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z'/%3E%3C/svg%3E" alt="Logo" class="logo-img">
-                        <h1>چت هوشمند</h1>
-                    </div>
-                    <div class="model-info">
-                        <span>مدل:</span>
-                        <span id="selected-model-name" class="model-name">انتخاب نشده</span>
-                    </div>
-                </div>
-                <div class="header-right">
-                    <div class="tone-selector">
-                        <select id="tone-select">
-                            <option value="normal">لحن عادی</option>
-                            <option value="formal">لحن رسمی</option>
-                            <option value="casual">لحن غیر رسمی</option>
-                            <option value="friendly">لحن دوستانه</option>
-                            <option value="professional">لحن حرفه‌ای</option>
-                            <option value="humorous">لحن طنزگونه</option>
-                            <option value="childish">لحن کودکانه</option>
-                            <option value="poetic">لحن شاعرانه</option>
-                        </select>
-                    </div>
-                    <div class="header-actions">
-                        <button class="model-select-btn" title="انتخاب مدل">
-                            <i class="fas fa-robot"></i>
-                        </button>
-                        <button class="history-btn" title="تاریخچه چت">
-                            <i class="fas fa-history"></i>
-                        </button>
-                        <button class="settings-btn" title="تنظیمات">
-                            <i class="fas fa-cog"></i>
-                        </button>
-                    </div>
+    <div class="chat-container">
+        <div class="chat-header">
+            <div class="header-left">
+                <h1>چت بات هوشمند</h1>
+                <div class="model-info">
+                    <span>مدل:</span>
+                    <span id="selected-model-name">انتخاب نشده</span>
                 </div>
             </div>
-        </header>
-
-        <main class="chat-container">
-            <div class="messages" id="messages"></div>
-        </main>
-
-        <div class="input-container">
-            <div class="input-wrapper">
-                <textarea placeholder="از من هر چیزی بپرسید..." id="user-input"></textarea>
-                <div class="input-actions">
-                    <button class="attach-btn"><i class="fas fa-paperclip"></i></button>
-                    <button class="send-btn"><i class="fas fa-paper-plane"></i></button>
+            <div class="header-right">
+                <div class="provider-selector">
+                    <button class="provider-btn active" data-provider="gemini">
+                        <i class="fas fa-robot"></i>
+                        <span>جمینای</span>
+                    </button>
+                    <button class="provider-btn" data-provider="openrouter">
+                        <i class="fas fa-server"></i>
+                        <span>اوپن‌روتر</span>
+                    </button>
                 </div>
+                <div class="tone-selector">
+                    <select id="tone-select">
+                        <option value="normal">عادی</option>
+                        <option value="formal">رسمی</option>
+                        <option value="casual">غیر رسمی</option>
+                        <option value="friendly">دوستانه</option>
+                        <option value="professional">حرفه‌ای</option>
+                        <option value="humorous">طنزگونه</option>
+                        <option value="childish">کودکانه</option>
+                        <option value="poetic">شاعرانه</option>
+                    </select>
+                </div>
+                <div class="header-actions">
+                    <button class="new-chat-btn" title="چت جدید">
+                        <i class="fas fa-plus"></i>
+                        <span>چت جدید</span>
+                    </button>
+                    <button class="history-btn" title="تاریخچه چت‌ها">
+                        <i class="fas fa-history"></i>
+                        <span>تاریخچه</span>
+                    </button>
+                    <button class="settings-btn" title="تنظیمات">
+                        <i class="fas fa-cog"></i>
+                        <span>تنظیمات</span>
+                    </button>
+                    <button class="theme-toggle" title="تغییر تم">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chat-messages" id="messages"></div>
+        
+        <div class="chat-input">
+            <div class="input-wrapper">
+                <button class="attach-btn" title="افزودن فایل">
+                    <i class="fas fa-paperclip"></i>
+                </button>
+                <textarea id="user-input" placeholder="پیام خود را بنویسید..." rows="1"></textarea>
+                <button class="send-btn" title="ارسال پیام">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
             </div>
         </div>
     </div>
 
     <!-- مودال تنظیمات -->
-    <div class="modal" id="settings-modal">
+    <div id="settings-modal" class="modal">
         <div class="modal-content">
-            <h2>تنظیمات API</h2>
-            <div class="settings-form">
-                <div class="form-group">
-                    <label for="gemini-key">Gemini API Key:</label>
-                    <div class="api-status">
+            <button class="close-modal">&times;</button>
+            <h2>تنظیمات</h2>
+            <div class="settings-section">
+                <h3>کلیدهای API</h3>
+                <div class="api-key-input">
+                    <label for="gemini-key">کلید API جمینای:</label>
+                    <div class="input-group">
                         <input type="password" id="gemini-key" placeholder="کلید API جمینای را وارد کنید">
-                        <button class="toggle-password" type="button">
+                        <button class="toggle-password">
                             <i class="fas fa-eye"></i>
                         </button>
-                        <span class="status-indicator" id="gemini-status">
-                            <i class="fas fa-circle"></i>
-                        </span>
                     </div>
+                    <div class="status-indicator" id="gemini-status"></div>
                 </div>
-                <div class="form-group">
-                    <label for="openrouter-key">OpenRouter API Key:</label>
-                    <div class="api-status">
-                        <input type="password" id="openrouter-key" placeholder="کلید API اوپن‌روتر را وارد کنید">
-                        <button class="toggle-password" type="button">
+                <div class="api-key-input">
+                    <label>کلید API OpenRouter:</label>
+                    <div class="input-group">
+                        <input type="password" id="openrouter-key" placeholder="کلید API را وارد کنید">
+                        <button class="toggle-password" onclick="togglePassword('openrouter-key')">
                             <i class="fas fa-eye"></i>
                         </button>
-                        <span class="status-indicator" id="openrouter-status">
-                            <i class="fas fa-circle"></i>
-                        </span>
+                        <div class="status-indicator disconnected" id="openrouter-status"></div>
                     </div>
                 </div>
-                <div class="form-actions">
-                    <button class="save-settings">ذخیره تنظیمات</button>
+                <div class="api-key-input">
+                    <label>انتخاب مدل OpenRouter:</label>
+                    <select id="openrouter-model" class="input-group">
+                        <option value="anthropic/claude-3-opus-20240229">Claude 3 Opus (4096)</option>
+                        <option value="anthropic/claude-3-sonnet-20240229">Claude 3 Sonnet (4096)</option>
+                        <option value="anthropic/claude-3-haiku-20240307">Claude 3 Haiku (4096)</option>
+                        <option value="meta-llama/codellama-70b-instruct">CodeLlama 70B (4096)</option>
+                        <option value="meta-llama/llama-2-70b-chat">Llama 2 70B (4096)</option>
+                        <option value="gpt-4-turbo-preview">GPT-4 Turbo (4096)</option>
+                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo (4096)</option>
+                        <option value="mistralai/mistral-7b-instruct">Mistral 7B (8192)</option>
+                        <option value="mistralai/mixtral-8x7b-instruct">Mixtral 8x7B (32768)</option>
+                        <option value="google/gemini-pro">Gemini Pro (32768)</option>
+                        <option value="google/gemini-pro-vision">Gemini Pro Vision (32768)</option>
+                    </select>
                 </div>
-            </div>
-            <button class="close-modal">&times;</button>
-        </div>
-    </div>
-
-    <!-- مودال انتخاب مدل -->
-    <div id="model-modal" class="modal">
-        <div class="modal-content">
-            <button class="close-modal">&times;</button>
-            <h2>انتخاب مدل هوش مصنوعی</h2>
-            <div class="search-box">
-                <input type="text" placeholder="جستجو در مدل‌ها..." class="model-search">
-            </div>
-            <div class="model-list">
-                <!-- مدل‌ها اینجا نمایش داده می‌شوند -->
+                <button class="save-settings">ذخیره تنظیمات</button>
             </div>
         </div>
     </div>
 
     <!-- مودال تاریخچه -->
-    <div class="modal" id="history-modal">
+    <div id="history-modal" class="modal">
         <div class="modal-content">
-            <h2>تاریخچه گفتگوها</h2>
+            <button class="close-modal">&times;</button>
+            <h2>تاریخچه مکالمات</h2>
             <div class="search-box">
                 <input type="text" placeholder="جستجو در تاریخچه...">
                 <i class="fas fa-search"></i>
             </div>
             <div class="history-list"></div>
-            <button class="close-modal">&times;</button>
         </div>
     </div>
 
-    <footer>
-        <small>طراحی و توسعه: احسان شمسی</small>
-    </footer>
-
-    <script src="https://cdn.jsdelivr.net/npm/compressorjs@1.2.1/dist/compressor.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/compressorjs/1.1.1/compressor.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html> 
