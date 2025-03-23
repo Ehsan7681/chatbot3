@@ -6,13 +6,25 @@ const API_ENDPOINTS = {
 };
 
 // متغیرهای عمومی
-let currentTheme = 'light';
-let chatHistory = [];
-let selectedModel = localStorage.getItem('selectedModel') || null;
-let conversationHistory = {};
+let currentTheme = localStorage.getItem('theme') || 'light';
+let chats = JSON.parse(localStorage.getItem('chats')) || [{
+    id: 'default',
+    title: 'چت پیش‌فرض',
+    messages: [],
+    timestamp: new Date().toISOString()
+}];
+let currentChatId = localStorage.getItem('currentChatId') || 'default';
+let selectedModel = localStorage.getItem('selectedModel') || 'gemini';
+let selectedOpenRouterModel = localStorage.getItem('selectedOpenRouterModel') || 'anthropic/claude-3-sonnet-20240229';
+let apiKeys = {
+    gemini: localStorage.getItem('geminiKey') || '',
+    openrouter: localStorage.getItem('openrouterKey') || ''
+};
+let selectedProvider = localStorage.getItem('selectedProvider') || 'gemini';
 let GEMINI_API_KEY = localStorage.getItem('GEMINI_API_KEY') || '';
 let OPENROUTER_API_KEY = localStorage.getItem('OPENROUTER_API_KEY') || '';
 let currentTone = localStorage.getItem('currentTone') || 'normal';
+let contextWindow = 5; // تعداد پیام‌های قبلی که در هر درخواست ارسال می‌شوند
 
 // المان‌های DOM
 const themeToggle = document.querySelector('.theme-toggle');
@@ -21,10 +33,8 @@ const userInput = document.getElementById('user-input');
 const sendButton = document.querySelector('.send-btn');
 const attachButton = document.querySelector('.attach-btn');
 const settingsModal = document.getElementById('settings-modal');
-const modelModal = document.getElementById('model-modal');
 const historyModal = document.getElementById('history-modal');
 const settingsBtn = document.querySelector('.settings-btn');
-const modelSelectBtn = document.querySelector('.model-select-btn');
 const historyBtn = document.querySelector('.history-btn');
 const closeModalBtns = document.querySelectorAll('.close-modal');
 const searchInput = document.querySelector('.search-box input');
@@ -33,14 +43,94 @@ const openrouterKeyInput = document.getElementById('openrouter-key');
 const saveSettingsBtn = document.querySelector('.save-settings');
 const togglePasswordBtns = document.querySelectorAll('.toggle-password');
 const toneSelect = document.getElementById('tone-select');
+const newChatBtn = document.querySelector('.new-chat-btn');
 
-// نمایش مقادیر ذخیره شده در فرم
-if (GEMINI_API_KEY) {
-    geminiKeyInput.value = GEMINI_API_KEY;
-}
-if (OPENROUTER_API_KEY) {
-    openrouterKeyInput.value = OPENROUTER_API_KEY;
-}
+// تنظیمات لحن
+const tonePrompts = {
+    normal: 'لطفاً به صورت عادی و معمولی پاسخ دهید.',
+    formal: 'لطفاً با لحن رسمی و اداری پاسخ دهید. از کلمات و اصطلاحات رسمی استفاده کنید.',
+    casual: 'لطفاً با لحن غیر رسمی و دوستانه پاسخ دهید. می‌توانید از اصطلاحات عامیانه استفاده کنید.',
+    friendly: 'لطفاً با لحن صمیمی و دوستانه پاسخ دهید. از کلمات محبت‌آمیز استفاده کنید.',
+    professional: 'لطفاً با لحن حرفه‌ای و تخصصی پاسخ دهید. از اصطلاحات تخصصی استفاده کنید.',
+    humorous: 'لطفاً با لحن طنزگونه و شوخ‌طبعانه پاسخ دهید. می‌توانید از جوک و شوخی استفاده کنید.',
+    childish: 'لطفاً با لحن کودکانه و ساده پاسخ دهید. از کلمات ساده و قابل فهم برای کودکان استفاده کنید.',
+    poetic: 'لطفاً با لحن شاعرانه و ادبی پاسخ دهید. از تشبیهات و استعارات استفاده کنید.'
+};
+
+// تنظیم مقادیر اولیه
+document.addEventListener('DOMContentLoaded', () => {
+    // تنظیم تم
+    document.documentElement.setAttribute('data-theme', currentTheme);
+    themeToggle.innerHTML = currentTheme === 'light' ? 
+        '<i class="fas fa-moon"></i>' : 
+        '<i class="fas fa-sun"></i>';
+
+    // تنظیم لحن
+    toneSelect.value = currentTone;
+
+    // تنظیم کلیدهای API
+    if (apiKeys.gemini) geminiKeyInput.value = apiKeys.gemini;
+    if (apiKeys.openrouter) openrouterKeyInput.value = apiKeys.openrouter;
+
+    // تنظیم ارائه‌دهنده فعال
+    const activeProviderBtn = document.querySelector(`.provider-btn[data-provider="${selectedProvider}"]`);
+    if (activeProviderBtn) {
+        activeProviderBtn.classList.add('active');
+    }
+
+    // بارگذاری چت فعلی
+    const currentChat = chats.find(c => c.id === currentChatId);
+    if (currentChat) {
+        messagesContainer.innerHTML = '';
+        currentChat.messages.forEach(msg => {
+            addMessageToChat(msg);
+        });
+    }
+
+    // به‌روزرسانی لیست چت‌ها
+    updateChatList();
+
+    // بررسی وضعیت API ها
+    updateAPIStatus();
+});
+
+// مدیریت تم
+themeToggle.addEventListener('click', () => {
+    currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', currentTheme);
+    localStorage.setItem('theme', currentTheme);
+    themeToggle.innerHTML = currentTheme === 'light' ? 
+        '<i class="fas fa-moon"></i>' : 
+        '<i class="fas fa-sun"></i>';
+});
+
+// مدیریت لحن
+toneSelect.addEventListener('change', () => {
+    currentTone = toneSelect.value;
+    localStorage.setItem('currentTone', currentTone);
+});
+
+// مدیریت ارائه‌دهنده
+document.querySelectorAll('.provider-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const provider = btn.dataset.provider;
+        selectedProvider = provider;
+        localStorage.setItem('selectedProvider', provider);
+        
+        document.querySelectorAll('.provider-btn').forEach(b => {
+            b.classList.remove('active');
+            if (b.dataset.provider === provider) {
+                b.classList.add('active');
+            }
+        });
+        
+        if (provider === 'openrouter') {
+            updateSelectedModelName(selectedOpenRouterModel);
+        } else {
+            updateSelectedModelName(null);
+        }
+    });
+});
 
 // مدیریت نمایش/مخفی کردن کلیدها
 togglePasswordBtns.forEach(btn => {
@@ -57,7 +147,7 @@ togglePasswordBtns.forEach(btn => {
     });
 });
 
-// بررسی وضعیت اتصال API ها
+// بررسی وضعیت API ها
 async function checkAPIStatus(apiKey, endpoint, statusElement) {
     if (!apiKey) {
         statusElement.className = 'status-indicator disconnected';
@@ -67,7 +157,6 @@ async function checkAPIStatus(apiKey, endpoint, statusElement) {
     statusElement.className = 'status-indicator connecting';
     
     try {
-        // یک درخواست ساده برای بررسی وضعیت
         const response = await fetch(endpoint, {
             method: 'OPTIONS',
             headers: {
@@ -89,72 +178,13 @@ async function checkAPIStatus(apiKey, endpoint, statusElement) {
     }
 }
 
-// به‌روزرسانی وضعیت API ها
-async function updateAPIStatus() {
-    const geminiStatus = document.getElementById('gemini-status');
-    const openrouterStatus = document.getElementById('openrouter-status');
-    
-    if (geminiStatus && openrouterStatus) {
-        await Promise.all([
-            checkAPIStatus(GEMINI_API_KEY, API_ENDPOINTS.GEMINI, geminiStatus),
-            checkAPIStatus(OPENROUTER_API_KEY, API_ENDPOINTS.OPENROUTER_MODELS, openrouterStatus)
-        ]);
-    }
-}
-
-// نمایش مودال تنظیمات
-settingsBtn.addEventListener('click', () => {
-    settingsModal.style.display = 'block';
-    updateAPIStatus();
-});
-
-// ذخیره تنظیمات
-saveSettingsBtn.addEventListener('click', async () => {
-    const geminiKey = geminiKeyInput.value.trim();
-    const openrouterKey = openrouterKeyInput.value.trim();
-    
-    if (geminiKey) {
-        GEMINI_API_KEY = geminiKey;
-        localStorage.setItem('GEMINI_API_KEY', geminiKey);
-    }
-    
-    if (openrouterKey) {
-        OPENROUTER_API_KEY = openrouterKey;
-        localStorage.setItem('OPENROUTER_API_KEY', openrouterKey);
-    }
-    
-    // بررسی وضعیت API ها
-    await updateAPIStatus();
-    
-    // نمایش پیام موفقیت
-    const notification = document.createElement('div');
-    notification.className = 'settings-saved';
-    notification.textContent = 'تنظیمات با موفقیت ذخیره شد';
-    document.body.appendChild(notification);
-    
-    // حذف پیام بعد از اتمام انیمیشن
-    setTimeout(() => {
-        notification.remove();
-    }, 3000);
-});
-
-// تغییر تم
-themeToggle.addEventListener('click', () => {
-    currentTheme = currentTheme === 'light' ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', currentTheme);
-    themeToggle.innerHTML = currentTheme === 'light' ? 
-        '<i class="fas fa-moon"></i>' : 
-        '<i class="fas fa-sun"></i>';
-});
-
-// دریافت لیست مدل‌ها از OpenRouter
+// دریافت مدل‌های OpenRouter
 async function fetchOpenRouterModels() {
     try {
         const response = await fetch(API_ENDPOINTS.OPENROUTER_MODELS, {
-            method: 'GET',
             headers: {
-                'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-                'HTTP-Referer': window.location.href,
+                'Authorization': `Bearer ${apiKeys.openrouter}`,
+                'HTTP-Referer': window.location.origin,
                 'X-Title': 'AI Chat Application'
             }
         });
@@ -164,140 +194,226 @@ async function fetchOpenRouterModels() {
         }
         
         const data = await response.json();
-        return data.data.map(model => ({
-            id: model.id,
-            name: model.name,
-            context_length: model.context_length,
-            max_tokens: model.max_tokens
-        }));
+        const modelSelect = document.getElementById('openrouter-model');
+        modelSelect.innerHTML = ''; // پاک کردن مدل‌های قبلی
+        
+        data.data.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.id;
+            option.textContent = `${model.name} (${model.max_tokens})`;
+            modelSelect.appendChild(option);
+        });
+        
+        // ذخیره مدل انتخاب شده قبلی
+        if (selectedOpenRouterModel) {
+            modelSelect.value = selectedOpenRouterModel;
+        }
+        
+        return true;
     } catch (error) {
         console.error('خطا در دریافت مدل‌ها:', error);
-        return [];
+        return false;
     }
+}
+
+// به‌روزرسانی وضعیت API ها
+async function updateAPIStatus() {
+    const geminiStatus = document.getElementById('gemini-status');
+    const openrouterStatus = document.getElementById('openrouter-status');
+    
+    if (geminiStatus && openrouterStatus) {
+        const [geminiResult, openrouterResult] = await Promise.all([
+            checkAPIStatus(apiKeys.gemini, API_ENDPOINTS.GEMINI, geminiStatus),
+            checkAPIStatus(apiKeys.openrouter, API_ENDPOINTS.OPENROUTER_MODELS, openrouterStatus)
+        ]);
+        
+        if (openrouterResult) {
+            await fetchOpenRouterModels();
+        }
+    }
+}
+
+// ذخیره تنظیمات
+saveSettingsBtn.addEventListener('click', async () => {
+    const geminiKey = geminiKeyInput.value.trim();
+    const openrouterKey = openrouterKeyInput.value.trim();
+    const openrouterModel = document.getElementById('openrouter-model').value;
+    
+    apiKeys.gemini = geminiKey;
+    apiKeys.openrouter = openrouterKey;
+    selectedOpenRouterModel = openrouterModel;
+    
+    localStorage.setItem('geminiKey', geminiKey);
+    localStorage.setItem('openrouterKey', openrouterKey);
+    localStorage.setItem('selectedOpenRouterModel', openrouterModel);
+    
+    await updateAPIStatus();
+    
+    const notification = document.createElement('div');
+    notification.className = 'settings-saved';
+    notification.textContent = 'تنظیمات با موفقیت ذخیره شد';
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.remove();
+    }, 3000);
+    
+    settingsModal.style.display = 'none';
+});
+
+// مدیریت مودال‌ها
+settingsBtn.addEventListener('click', () => {
+    settingsModal.style.display = 'block';
+    updateAPIStatus();
+});
+
+historyBtn.addEventListener('click', () => {
+    historyModal.style.display = 'block';
+    searchHistory('');
+});
+
+closeModalBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+        btn.closest('.modal').style.display = 'none';
+    });
+});
+
+// جستجو در تاریخچه
+function searchHistory(query) {
+    const historyList = document.querySelector('.history-list');
+    historyList.innerHTML = ''; // پاک کردن لیست قبلی
+    
+    // گروه‌بندی پیام‌ها بر اساس زمان
+    const groupedMessages = {};
+    chats.forEach(chat => {
+        chat.messages.forEach(msg => {
+            const date = new Date(msg.timestamp).toLocaleDateString('fa-IR');
+            if (!groupedMessages[date]) {
+                groupedMessages[date] = [];
+            }
+            groupedMessages[date].push(msg);
+        });
+    });
+    
+    // نمایش پیام‌ها به صورت گروه‌بندی شده
+    Object.entries(groupedMessages).forEach(([date, messages]) => {
+        const dateHeader = document.createElement('div');
+        dateHeader.className = 'history-date';
+        dateHeader.textContent = date;
+        historyList.appendChild(dateHeader);
+        
+        messages.forEach(msg => {
+            if (typeof msg.content === 'string' && 
+                (query === '' || msg.content.toLowerCase().includes(query.toLowerCase()))) {
+                const messageElement = document.createElement('div');
+                messageElement.className = 'history-item';
+                
+                const content = msg.type === 'file' ? 
+                    `<img src="${msg.content}" alt="تصویر" style="max-width: 100%;">` :
+                    highlightText(msg.content, query);
+                
+                messageElement.innerHTML = `
+                    <div class="history-content">
+                        ${content}
+                    </div>
+                    <div class="history-time">${msg.timestamp}</div>
+                    <div class="history-actions">
+                        <button class="view-full-msg" title="مشاهده کل پیام">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="delete-history" title="حذف پیام">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                
+                historyList.appendChild(messageElement);
+            }
+        });
+    });
+
+    // اضافه کردن event listener برای دکمه‌های تاریخچه
+    document.querySelectorAll('.view-full-msg').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const historyItem = e.target.closest('.history-item');
+            const content = historyItem.querySelector('.history-content').innerHTML;
+            showFullMessage(content);
+        });
+    });
+
+    document.querySelectorAll('.delete-history').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (confirm('آیا از حذف این پیام از تاریخچه اطمینان دارید؟')) {
+                const historyItem = e.target.closest('.history-item');
+                const index = Array.from(document.querySelectorAll('.history-item')).indexOf(historyItem);
+                chats.splice(index, 1);
+                localStorage.setItem('chats', JSON.stringify(chats));
+                historyItem.remove();
+            }
+        });
+    });
+}
+
+// نمایش کل پیام در مودال
+function showFullMessage(content) {
+    const fullMessageModal = document.createElement('div');
+    fullMessageModal.className = 'modal';
+    fullMessageModal.id = 'full-message-modal';
+    fullMessageModal.innerHTML = `
+        <div class="modal-content">
+            <button class="close-modal">&times;</button>
+            <h2>کل پیام</h2>
+            <div class="full-message-content">${content}</div>
+        </div>
+    `;
+    
+    document.body.appendChild(fullMessageModal);
+    fullMessageModal.style.display = 'block';
+    
+    const closeBtn = fullMessageModal.querySelector('.close-modal');
+    closeBtn.addEventListener('click', () => {
+        fullMessageModal.remove();
+    });
+    
+    fullMessageModal.addEventListener('click', (e) => {
+        if (e.target === fullMessageModal) {
+            fullMessageModal.remove();
+        }
+    });
+}
+
+// هایلایت کردن متن جستجو شده
+function highlightText(text, query) {
+    if (!query || typeof text !== 'string') return text;
+    const regex = new RegExp(`(${query})`, 'gi');
+    return text.replace(regex, '<span class="highlight">$1</span>');
 }
 
 // به‌روزرسانی نام مدل انتخاب شده
 function updateSelectedModelName(modelId) {
     const modelNameElement = document.getElementById('selected-model-name');
-    if (modelId) {
+    const confirmButton = document.querySelector('.confirm-model-btn') || addModelConfirmationButton();
+    
+    if (selectedProvider === 'openrouter' && modelId) {
         modelNameElement.textContent = modelId;
         modelNameElement.style.color = 'var(--primary-color)';
+        modelNameElement.style.display = 'inline';
+        confirmButton.style.display = 'inline';
+    } else if (selectedProvider === 'gemini') {
+        modelNameElement.textContent = 'Gemini Pro';
+        modelNameElement.style.color = 'var(--primary-color)';
+        modelNameElement.style.display = 'inline';
+        confirmButton.style.display = 'none';
     } else {
         modelNameElement.textContent = 'انتخاب نشده';
         modelNameElement.style.color = 'var(--text-color)';
         modelNameElement.style.opacity = '0.7';
-    }
-}
-
-// جستجو در مدل‌ها
-function searchModels(query) {
-    const modelItems = document.querySelectorAll('.model-item');
-    query = query.toLowerCase();
-    
-    modelItems.forEach(item => {
-        const modelName = item.querySelector('h3').textContent.toLowerCase();
-        const modelDetails = item.querySelector('.model-details').textContent.toLowerCase();
-        
-        if (modelName.includes(query) || modelDetails.includes(query)) {
-            item.classList.remove('hidden');
-        } else {
-            item.classList.add('hidden');
-        }
-    });
-}
-
-// نمایش مدل‌ها در مودال
-async function displayModels() {
-    const modelList = document.querySelector('.model-list');
-    const modelSearch = document.querySelector('.model-search');
-    modelList.innerHTML = 'در حال بارگذاری...';
-    
-    try {
-        const models = await fetchOpenRouterModels();
-        
-        if (!models || models.length === 0) {
-            modelList.innerHTML = 'هیچ مدلی یافت نشد. لطفاً از صحت API Key خود اطمینان حاصل کنید.';
-            return;
-        }
-        
-        modelList.innerHTML = models.map(model => `
-            <div class="model-item ${model.id === selectedModel ? 'selected' : ''}" data-model-id="${model.id}">
-                <h3>${model.name}</h3>
-                <div class="model-details">
-                    <span>حداکثر طول متن ورودی: ${model.context_length} کاراکتر</span>
-                    <span>حداکثر طول پاسخ: ${model.max_tokens} کاراکتر</span>
-                </div>
-            </div>
-        `).join('');
-        
-        // اضافه کردن event listener برای جستجو
-        modelSearch.addEventListener('input', (e) => {
-            searchModels(e.target.value);
-        });
-        
-        // اضافه کردن event listener برای انتخاب مدل
-        document.querySelectorAll('.model-item').forEach(item => {
-            item.addEventListener('click', () => {
-                selectedModel = item.dataset.modelId;
-                localStorage.setItem('selectedModel', selectedModel);
-                updateSelectedModelName(selectedModel);
-                modelModal.style.display = 'none';
-                
-                // به‌روزرسانی کلاس selected
-                document.querySelectorAll('.model-item').forEach(m => m.classList.remove('selected'));
-                item.classList.add('selected');
-            });
-        });
-    } catch (error) {
-        modelList.innerHTML = 'خطا در دریافت لیست مدل‌ها. لطفاً API Key خود را بررسی کنید.';
-    }
-}
-
-// اضافه کردن پیام به چت
-function addMessageToChat(message) {
-    const messageElement = document.createElement('div');
-    messageElement.className = `message ${message.sender} ${message.error ? 'error' : ''}`;
-    
-    const content = message.type === 'file' ? 
-        `<img src="${message.content}" alt="تصویر آپلود شده" style="max-width: 100%;">` :
-        message.content;
-    
-    const stats = getMessageStats(message.content);
-    
-    messageElement.innerHTML = `
-        <div class="message-content"></div>
-        <div class="message-stats">
-            کلمات: ${stats.words} | کاراکترها: ${stats.chars} | 
-            جملات: ${stats.sentences} | توکن‌ها: ${stats.tokens}
-        </div>
-        <div class="message-time">${message.timestamp}</div>
-        ${message.sender === 'user' ? '<button class="delete-msg"><i class="fas fa-trash"></i></button>' : ''}
-    `;
-    
-    messagesContainer.appendChild(messageElement);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    
-    chatHistory.push(message);
-    localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
-
-    // نمایش متن به صورت کلمه به کلمه
-    if (message.sender === 'bot' && !message.error) {
-        const messageContent = messageElement.querySelector('.message-content');
-        const words = content.split(' ');
-        let currentIndex = 0;
-        
-        function addNextWord() {
-            if (currentIndex < words.length) {
-                messageContent.innerHTML += words[currentIndex] + ' ';
-                currentIndex++;
-                messageContent.scrollIntoView({ behavior: 'smooth', block: 'end' });
-                setTimeout(addNextWord, 50); // سرعت نمایش کلمات (میلی‌ثانیه)
-            }
-        }
-        
-        addNextWord();
-    } else {
-        messageElement.querySelector('.message-content').innerHTML = content;
+        modelNameElement.style.display = 'inline';
+        confirmButton.style.display = 'none';
     }
 }
 
@@ -312,6 +428,44 @@ function getMessageStats(text) {
         sentences: text.split(/[.!?]+/).length - 1,
         tokens: Math.round(text.length / 4)
     };
+}
+
+// اضافه کردن پیام به چت
+function addMessageToChat(message) {
+    const messageElement = document.createElement('div');
+    messageElement.className = `message ${message.sender} ${message.error ? 'error' : ''}`;
+    
+    const content = message.type === 'file' ? 
+        `<img src="${message.content}" alt="تصویر آپلود شده" style="max-width: 100%;">` :
+        message.content;
+    
+    const stats = getMessageStats(message.content);
+    
+    messageElement.innerHTML = `
+        <div class="message-content">${content}</div>
+        <div class="message-stats">
+            کلمات: ${stats.words} | کاراکترها: ${stats.chars} | 
+            جملات: ${stats.sentences} | توکن‌ها: ${stats.tokens}
+        </div>
+        <div class="message-time">${message.timestamp}</div>
+        ${message.sender === 'user' ? '<button class="delete-msg"><i class="fas fa-trash"></i></button>' : ''}
+    `;
+    
+    messagesContainer.appendChild(messageElement);
+    
+    // به‌روزرسانی چت در تاریخچه
+    const chat = chats.find(c => c.id === currentChatId);
+    if (chat) {
+        chat.messages.push(message);
+        chat.timestamp = new Date().toISOString();
+        if (chat.messages.length === 1 && message.sender === 'user') {
+            chat.title = message.content.substring(0, 30) + '...';
+        }
+        localStorage.setItem('chats', JSON.stringify(chats));
+        updateChatList();
+    }
+    
+    return messageElement;
 }
 
 // آپلود و فشرده‌سازی تصویر
@@ -337,155 +491,185 @@ function handleFileUpload(file) {
         });
     } catch (error) {
         console.error('خطا در فشرده‌سازی تصویر:', error);
-        // اگر کتابخانه compressor در دسترس نیست، مستقیماً فایل را آپلود کنیم
         const reader = new FileReader();
         reader.onload = (e) => sendMessage(e.target.result, true);
         reader.readAsDataURL(file);
     }
 }
 
-// جستجو در تاریخچه
-function searchHistory(query) {
-    const historyList = document.querySelector('.history-list');
-    const filteredHistory = chatHistory.filter(msg => 
-        typeof msg.content === 'string' && msg.content.toLowerCase().includes(query.toLowerCase())
-    );
+// ارسال پیام
+async function sendMessage(message, isFile = false) {
+    if (!selectedModel) {
+        alert('لطفاً ابتدا یک مدل هوش مصنوعی را انتخاب کنید.');
+        return;
+    }
+
+    const timestamp = new Date().toLocaleString('fa-IR');
+    const messageObj = {
+        content: message,
+        type: isFile ? 'file' : 'text',
+        timestamp,
+        sender: 'user',
+        model: selectedModel,
+        provider: selectedProvider,
+        tone: currentTone
+    };
     
-    historyList.innerHTML = filteredHistory.map(msg => `
-        <div class="history-item">
-            <div class="history-content">
-                ${highlightText(msg.content, query)}
-            </div>
-            <div class="history-time">${msg.timestamp}</div>
-            <div class="history-actions">
-                <button class="view-full-msg" title="مشاهده کل پیام">
-                    <i class="fas fa-eye"></i>
-                </button>
-                <button class="delete-history" title="حذف پیام">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-        </div>
-    `).join('');
+    addMessageToChat(messageObj);
+    
+    if (!isFile) {
+        try {
+            let response;
+            let botResponse = '';
+            
+            const toneInstruction = tonePrompts[currentTone];
+            const fullMessage = `${toneInstruction}\n\nسوال: ${message}`;
+            
+            // ایجاد پیام خالی برای ربات
+            const botMessageObj = {
+                content: '',
+                timestamp: new Date().toLocaleString('fa-IR'),
+                sender: 'bot',
+                model: selectedModel,
+                provider: selectedProvider,
+                tone: currentTone
+            };
+            
+            const botMessageElement = addMessageToChat(botMessageObj);
+            const messageContent = botMessageElement.querySelector('.message-content');
+            
+            if (selectedProvider === 'gemini') {
+                if (!apiKeys.gemini) {
+                    throw new Error('لطفاً API Key جمینای را در تنظیمات وارد کنید.');
+                }
 
-    // اضافه کردن event listener برای دکمه مشاهده کل پیام
-    document.querySelectorAll('.view-full-msg').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const historyItem = e.target.closest('.history-item');
-            const content = historyItem.querySelector('.history-content').textContent;
-            showFullMessage(content);
-        });
-    });
+                response = await fetch(API_ENDPOINTS.GEMINI, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKeys.gemini}`
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: fullMessage
+                            }]
+                        }],
+                        generationConfig: {
+                            temperature: 0.7,
+                            topK: 40,
+                            topP: 0.95,
+                            maxOutputTokens: 1024
+                        }
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error?.message || `خطای HTTP! وضعیت: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                botResponse = data.candidates[0].content.parts[0].text;
+                
+                // نمایش تدریجی پاسخ
+                const words = botResponse.split(' ');
+                for (let i = 0; i < words.length; i++) {
+                    messageContent.innerHTML += words[i] + ' ';
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+            } else if (selectedProvider === 'openrouter') {
+                if (!apiKeys.openrouter) {
+                    throw new Error('لطفاً API Key اوپن‌روتر را در تنظیمات وارد کنید.');
+                }
 
-    // اضافه کردن event listener برای دکمه حذف
-    document.querySelectorAll('.delete-history').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (confirm('آیا از حذف این پیام از تاریخچه اطمینان دارید؟')) {
-                const historyItem = e.target.closest('.history-item');
-                const index = Array.from(document.querySelectorAll('.history-item')).indexOf(historyItem);
-                chatHistory.splice(index, 1);
-                localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
-                historyItem.remove();
+                response = await fetch(API_ENDPOINTS.OPENROUTER_CHAT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKeys.openrouter}`,
+                        'HTTP-Referer': window.location.origin,
+                        'X-Title': 'AI Chat Application'
+                    },
+                    body: JSON.stringify({
+                        model: selectedOpenRouterModel,
+                        messages: [
+                            { role: 'system', content: toneInstruction },
+                            { role: 'user', content: message }
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 1000,
+                        stream: true // فعال کردن حالت stream
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error?.message || `خطای HTTP! وضعیت: ${response.status}`);
+                }
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const dataStr = line.slice(6);
+                            if (dataStr === '[DONE]') continue;
+                            
+                            try {
+                                const data = JSON.parse(dataStr);
+                                if (data.choices[0].delta.content) {
+                                    messageContent.innerHTML += data.choices[0].delta.content;
+                                }
+                            } catch (error) {
+                                console.error('خطا در پردازش پاسخ:', error);
+                                continue;
+                            }
+                        }
+                    }
+                }
+            } else {
+                throw new Error('مدل انتخاب شده پشتیبانی نمی‌شود.');
             }
-        });
-    });
-}
-
-// هایلایت کردن متن جستجو شده
-function highlightText(text, query) {
-    if (!query || typeof text !== 'string') return text;
-    const regex = new RegExp(`(${query})`, 'gi');
-    return text.replace(regex, '<span class="highlight">$1</span>');
-}
-
-// نمایش کل پیام در مودال
-function showFullMessage(content) {
-    const fullMessageModal = document.createElement('div');
-    fullMessageModal.className = 'modal';
-    fullMessageModal.id = 'full-message-modal';
-    fullMessageModal.innerHTML = `
-        <div class="modal-content">
-            <button class="close-modal">&times;</button>
-            <h2>کل پیام</h2>
-            <div class="full-message-content">${content}</div>
-        </div>
-    `;
-    
-    document.body.appendChild(fullMessageModal);
-    fullMessageModal.style.display = 'block';
-    
-    // بستن مودال
-    const closeBtn = fullMessageModal.querySelector('.close-modal');
-    closeBtn.addEventListener('click', () => {
-        fullMessageModal.remove();
-    });
-    
-    // بستن مودال با کلیک بیرون از آن
-    fullMessageModal.addEventListener('click', (e) => {
-        if (e.target === fullMessageModal) {
-            fullMessageModal.remove();
+            
+            // به‌روزرسانی محتوای نهایی پیام
+            botMessageObj.content = messageContent.innerHTML;
+            
+        } catch (error) {
+            console.error('خطا در ارسال پیام:', error);
+            addMessageToChat({
+                content: `متأسفانه خطایی رخ داد: ${error.message}`,
+                timestamp: new Date().toLocaleString('fa-IR'),
+                sender: 'bot',
+                error: true,
+                model: selectedModel,
+                provider: selectedProvider,
+                tone: currentTone
+            });
         }
-    });
+    }
 }
 
 // Event Listeners
-document.addEventListener('DOMContentLoaded', async () => {
-    try {
-        // بارگذاری تاریخچه مکالمات
-        const savedConversationHistory = localStorage.getItem('conversationHistory');
-        if (savedConversationHistory) {
-            conversationHistory = JSON.parse(savedConversationHistory);
-        }
-        
-        // بارگذاری تاریخچه چت
-        const savedHistory = localStorage.getItem('chatHistory');
-        if (savedHistory) {
-            chatHistory = JSON.parse(savedHistory);
-            // نمایش پیام‌های مدل انتخاب شده
-            const modelMessages = chatHistory.filter(msg => msg.model === selectedModel);
-            modelMessages.forEach(msg => {
-                if (msg.sender === 'user') {
-                    if (!conversationHistory[selectedModel]) {
-                        conversationHistory[selectedModel] = [];
-                    }
-                    conversationHistory[selectedModel].push({ role: 'user', content: msg.content });
-                } else if (msg.sender === 'bot') {
-                    if (!conversationHistory[selectedModel]) {
-                        conversationHistory[selectedModel] = [];
-                    }
-                    conversationHistory[selectedModel].push({ role: 'assistant', content: msg.content });
-                }
-            });
-        }
-        
-        // به‌روزرسانی نام مدل انتخاب شده در بارگذاری صفحه
-        updateSelectedModelName(selectedModel);
-        
-        // بررسی وضعیت API ها
-        await updateAPIStatus();
-    } catch (error) {
-        console.error('خطا در بارگذاری تاریخچه:', error);
+sendButton.addEventListener('click', () => {
+    const message = userInput.value.trim();
+    if (message) {
+        sendMessage(message);
+        userInput.value = '';
     }
-    
-    document.documentElement.setAttribute('data-theme', currentTheme);
 });
 
 userInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         sendButton.click();
-    }
-});
-
-sendButton.addEventListener('click', () => {
-    const message = userInput.value.trim();
-    if (message) {
-        sendMessage(message);
-        userInput.value = '';
     }
 });
 
@@ -501,210 +685,316 @@ attachButton.addEventListener('click', () => {
     input.click();
 });
 
-modelSelectBtn.addEventListener('click', () => {
-    modelModal.style.display = 'block';
-    displayModels();
-});
-
-historyBtn.addEventListener('click', () => {
-    historyModal.style.display = 'block';
-    searchHistory('');
-});
-
-closeModalBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-        btn.closest('.modal').style.display = 'none';
-    });
-});
-
-searchInput.addEventListener('input', (e) => {
-    searchHistory(e.target.value);
-});
-
-// برای بستن مودال با کلیک بیرون از آن
-window.addEventListener('click', (e) => {
-    if (e.target === modelModal) {
-        modelModal.style.display = 'none';
-    }
-    if (e.target === historyModal) {
-        historyModal.style.display = 'none';
-    }
-});
-
 // حذف پیام‌ها
-function handleDeleteClick(e) {
+document.addEventListener('click', (e) => {
     if (e.target.closest('.delete-msg')) {
         if (confirm('آیا از حذف این پیام اطمینان دارید؟')) {
             const message = e.target.closest('.message');
-            const index = Array.from(messagesContainer.children).indexOf(message);
-            
-            // حذف پیام از تاریخچه
-            chatHistory.splice(index, 1);
-            localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
-            
-            message.remove();
+            const chat = chats.find(c => c.id === currentChatId);
+            if (chat) {
+                const index = Array.from(messagesContainer.children).indexOf(message);
+                chat.messages.splice(index, 1);
+                localStorage.setItem('chats', JSON.stringify(chats));
+                message.remove();
+                updateChatList();
+            }
         }
     }
-}
-
-document.addEventListener('click', handleDeleteClick);
-
-// تنظیمات لحن
-const tonePrompts = {
-    normal: 'لطفاً به صورت عادی و معمولی پاسخ دهید.',
-    formal: 'لطفاً با لحن رسمی و اداری پاسخ دهید. از کلمات و اصطلاحات رسمی استفاده کنید.',
-    casual: 'لطفاً با لحن غیر رسمی و دوستانه پاسخ دهید. می‌توانید از اصطلاحات عامیانه استفاده کنید.',
-    friendly: 'لطفاً با لحن صمیمی و دوستانه پاسخ دهید. از کلمات محبت‌آمیز استفاده کنید.',
-    professional: 'لطفاً با لحن حرفه‌ای و تخصصی پاسخ دهید. از اصطلاحات تخصصی استفاده کنید.',
-    humorous: 'لطفاً با لحن طنزگونه و شوخ‌طبعانه پاسخ دهید. می‌توانید از جوک و شوخی استفاده کنید.',
-    childish: 'لطفاً با لحن کودکانه و ساده پاسخ دهید. از کلمات ساده و قابل فهم برای کودکان استفاده کنید.',
-    poetic: 'لطفاً با لحن شاعرانه و ادبی پاسخ دهید. از تشبیهات و استعارات استفاده کنید.'
-};
-
-// ذخیره لحن انتخاب شده
-toneSelect.addEventListener('change', () => {
-    currentTone = toneSelect.value;
-    localStorage.setItem('currentTone', currentTone);
 });
 
-// تنظیم لحن اولیه
-toneSelect.value = currentTone;
+// اضافه کردن دکمه تأیید مدل
+function addModelConfirmationButton() {
+    const modelInfo = document.querySelector('.model-info');
+    const confirmButton = document.createElement('button');
+    confirmButton.className = 'confirm-model-btn';
+    confirmButton.textContent = 'تأیید مدل';
+    confirmButton.style.display = 'none';
+    confirmButton.onclick = () => {
+        selectedModel = selectedOpenRouterModel;
+        localStorage.setItem('selectedModel', selectedModel);
+        updateSelectedModelName(selectedModel);
+        confirmButton.style.display = 'none';
+    };
+    modelInfo.appendChild(confirmButton);
+    return confirmButton;
+}
 
-// ارسال پیام به API
-async function sendMessage(message, isFile = false) {
-    if (!selectedModel) {
-        alert('لطفاً ابتدا یک مدل هوش مصنوعی را انتخاب کنید.');
+// اضافه کردن event listener برای تغییر مدل
+document.getElementById('openrouter-model').addEventListener('change', (e) => {
+    selectedOpenRouterModel = e.target.value;
+    localStorage.setItem('selectedOpenRouterModel', selectedOpenRouterModel);
+    updateSelectedModelName(selectedOpenRouterModel);
+});
+
+// به‌روزرسانی لیست چت‌ها در تاریخچه
+function updateChatList() {
+    const historyList = document.querySelector('.history-list');
+    historyList.innerHTML = '';
+    
+    chats.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    chats.forEach(chat => {
+        const chatElement = document.createElement('div');
+        chatElement.className = `history-item ${chat.id === currentChatId ? 'active' : ''}`;
+        chatElement.dataset.chatId = chat.id;
+        
+        const lastMessage = chat.messages[chat.messages.length - 1];
+        const preview = lastMessage ? lastMessage.content.substring(0, 100) + '...' : 'چت خالی';
+        
+        chatElement.innerHTML = `
+            <div class="chat-title">${chat.title}</div>
+            <div class="chat-preview">${preview}</div>
+            <div class="chat-time">${new Date(chat.timestamp).toLocaleString('fa-IR')}</div>
+            <div class="chat-actions">
+                <button class="open-chat" title="باز کردن چت">
+                    <i class="fas fa-folder-open"></i>
+                </button>
+                <button class="delete-chat" title="حذف چت">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        `;
+        
+        historyList.appendChild(chatElement);
+    });
+    
+    // اضافه کردن event listener برای دکمه‌ها
+    document.querySelectorAll('.open-chat').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const chatId = e.target.closest('.history-item').dataset.chatId;
+            openChat(chatId);
+        });
+    });
+    
+    document.querySelectorAll('.delete-chat').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const chatId = e.target.closest('.history-item').dataset.chatId;
+            if (confirm('آیا از حذف این چت اطمینان دارید؟')) {
+                deleteChat(chatId);
+            }
+        });
+    });
+}
+
+// باز کردن چت
+function openChat(chatId) {
+    currentChatId = chatId;
+    localStorage.setItem('currentChatId', chatId);
+    
+    const chat = chats.find(c => c.id === chatId);
+    if (chat) {
+        messagesContainer.innerHTML = '';
+        chat.messages.forEach(msg => {
+            addMessageToChat(msg);
+        });
+    }
+    
+    historyModal.style.display = 'none';
+}
+
+// حذف چت
+function deleteChat(chatId) {
+    if (chatId === 'default') {
+        alert('نمی‌توانید چت پیش‌فرض را حذف کنید.');
         return;
     }
+    
+    chats = chats.filter(c => c.id !== chatId);
+    localStorage.setItem('chats', JSON.stringify(chats));
+    
+    if (currentChatId === chatId) {
+        currentChatId = 'default';
+        localStorage.setItem('currentChatId', 'default');
+        openChat('default');
+    }
+    
+    updateChatList();
+}
 
-    const timestamp = new Date().toLocaleString('fa-IR');
-    const messageObj = {
-        content: message,
-        type: isFile ? 'file' : 'text',
-        timestamp,
-        sender: 'user',
-        model: selectedModel,
-        tone: currentTone
+// ایجاد چت جدید
+function createNewChat() {
+    // ذخیره چت فعلی
+    const currentChat = chats.find(c => c.id === currentChatId);
+    if (currentChat && currentChat.messages.length > 0) {
+        currentChat.timestamp = new Date().toISOString();
+        currentChat.title = currentChat.messages[0].content.substring(0, 30) + '...';
+        localStorage.setItem('chats', JSON.stringify(chats));
+    }
+    
+    // ایجاد چت جدید
+    const chatId = Date.now().toString();
+    const newChat = {
+        id: chatId,
+        title: 'چت جدید',
+        messages: [],
+        timestamp: new Date().toISOString()
     };
     
-    addMessageToChat(messageObj);
+    chats.push(newChat);
+    currentChatId = chatId;
     
-    // اضافه کردن پیام به تاریخچه مدل انتخاب شده
-    if (!conversationHistory[selectedModel]) {
-        conversationHistory[selectedModel] = [];
+    localStorage.setItem('chats', JSON.stringify(chats));
+    localStorage.setItem('currentChatId', chatId);
+    
+    messagesContainer.innerHTML = '';
+    updateChatList();
+}
+
+// Event Listeners
+newChatBtn.addEventListener('click', createNewChat);
+
+// ارسال به Gemini
+async function sendToGemini(message, previousMessages) {
+    const apiKey = apiKeys.gemini;
+    if (!apiKey) {
+        throw new Error('کلید API جمینای تنظیم نشده است');
     }
-    conversationHistory[selectedModel].push({ role: 'user', content: message });
     
-    if (!isFile) {
-        try {
-            let response;
-            let botResponse = '';
-            
-            // اضافه کردن دستورالعمل لحن به پیام
-            const toneInstruction = tonePrompts[currentTone];
-            const fullMessage = `${toneInstruction}\n\nسوال: ${message}`;
-            
-            if (selectedModel.includes('gemini')) {
-                response = await fetch(API_ENDPOINTS.GEMINI, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${GEMINI_API_KEY}`
-                    },
-                    body: JSON.stringify({
-                        contents: [{
-                            parts: [{
-                                text: fullMessage
-                            }]
-                        }]
-                    })
-                });
-                
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error?.message || `خطای HTTP! وضعیت: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                botResponse = data.candidates[0].content.parts[0].text;
-            } else {
-                response = await fetch(API_ENDPOINTS.OPENROUTER_CHAT, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-                        'HTTP-Referer': window.location.href,
-                        'X-Title': 'AI Chat Application'
-                    },
-                    body: JSON.stringify({
-                        model: selectedModel,
-                        messages: [
-                            { role: 'system', content: toneInstruction },
-                            ...conversationHistory[selectedModel].slice(-10), // فقط 10 پیام آخر
-                            { role: 'user', content: message }
-                        ],
-                        temperature: 0.7,
-                        max_tokens: 1000,
-                        stream: false
-                    })
-                });
-                
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error?.message || `خطای HTTP! وضعیت: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                botResponse = data.choices[0].message.content;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:streamGenerateContent?key=${apiKey}`;
+    
+    const requestBody = {
+        contents: [
+            ...previousMessages.map(msg => ({
+                role: msg.role,
+                parts: [{ text: msg.content }]
+            })),
+            {
+                role: 'user',
+                parts: [{ text: message }]
             }
-            
-            const botMessageObj = {
-                content: botResponse,
-                timestamp: new Date().toLocaleString('fa-IR'),
-                sender: 'bot',
-                model: selectedModel,
-                tone: currentTone
-            };
-            
-            addMessageToChat(botMessageObj);
-            conversationHistory[selectedModel].push({ role: 'assistant', content: botResponse });
-            
-            // ذخیره تاریخچه در localStorage
-            localStorage.setItem('conversationHistory', JSON.stringify(conversationHistory));
-            
-        } catch (error) {
-            console.error('خطا در ارسال پیام:', error);
-            addMessageToChat({
-                content: `متأسفانه خطایی رخ داد: ${error.message}`,
-                timestamp: new Date().toLocaleString('fa-IR'),
-                sender: 'bot',
-                error: true,
-                model: selectedModel,
-                tone: currentTone
-            });
+        ],
+        generationConfig: {
+            temperature: 0.7,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 2048,
+        },
+        safetySettings: [
+            {
+                category: "HARM_CATEGORY_HARASSMENT",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+                category: "HARM_CATEGORY_HATE_SPEECH",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+                category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+                category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            }
+        ]
+    };
+    
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+    });
+    
+    if (!response.ok) {
+        throw new Error(`خطای HTTP: ${response.status}`);
+    }
+    
+    const reader = response.body.getReader();
+    let result = '';
+    
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = new TextDecoder().decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                const data = line.slice(6);
+                if (data === '[DONE]') continue;
+                
+                try {
+                    const parsed = JSON.parse(data);
+                    if (parsed.candidates && parsed.candidates[0].content.parts[0].text) {
+                        result += parsed.candidates[0].content.parts[0].text;
+                    }
+                } catch (e) {
+                    console.error('خطا در پردازش پاسخ:', e);
+                }
+            }
         }
     }
+    
+    return result;
 }
 
-// تابع نمایش مدل انتخاب شده
-function updateSelectedModelDisplay() {
-    const modelNameElement = document.getElementById('selected-model-name');
-    if (selectedModel) {
-        modelNameElement.textContent = selectedModel.name;
-        modelNameElement.style.display = 'inline';
-    } else {
-        modelNameElement.textContent = 'انتخاب نشده';
-        modelNameElement.style.display = 'inline';
+// ارسال به OpenRouter
+async function sendToOpenRouter(message, previousMessages) {
+    const apiKey = apiKeys.openrouter;
+    if (!apiKey) {
+        throw new Error('کلید API اوپن‌روتر تنظیم نشده است');
     }
-}
-
-// اضافه کردن event listener برای دکمه ارسال
-document.querySelector('.send-btn').addEventListener('click', sendMessage);
-
-// اضافه کردن event listener برای کلید Enter
-document.getElementById('user-input').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
+    
+    const url = 'https://openrouter.ai/api/v1/chat/completions';
+    
+    const requestBody = {
+        model: selectedOpenRouterModel,
+        messages: [
+            ...previousMessages,
+            {
+                role: 'user',
+                content: message
+            }
+        ],
+        temperature: 0.7,
+        max_tokens: 2048,
+        stream: true
+    };
+    
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+            'HTTP-Referer': window.location.origin,
+            'X-Title': 'Smart Chatbot'
+        },
+        body: JSON.stringify(requestBody)
+    });
+    
+    if (!response.ok) {
+        throw new Error(`خطای HTTP: ${response.status}`);
     }
-}); 
+    
+    const reader = response.body.getReader();
+    let result = '';
+    
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = new TextDecoder().decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                const data = line.slice(6);
+                if (data === '[DONE]') continue;
+                
+                try {
+                    const parsed = JSON.parse(data);
+                    if (parsed.choices && parsed.choices[0].delta.content) {
+                        result += parsed.choices[0].delta.content;
+                    }
+                } catch (e) {
+                    console.error('خطا در پردازش پاسخ:', e);
+                }
+            }
+        }
+    }
+    
+    return result;
+} 
